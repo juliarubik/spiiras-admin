@@ -9,7 +9,7 @@ public class LevelsController : MonoBehaviour {
     private GameObject activeLevel;
     // Use this for initialization
     void Start () {
-		
+        SetActive(levels[0]);
 	}
 
     public void SetActive(GameObject newActiveLevel)

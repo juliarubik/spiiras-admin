@@ -6,16 +6,37 @@ using System.Text.RegularExpressions;
 using UnityEngine.Networking;
 
 public class LabelsController : MonoBehaviour {
-    public PointsInputsController pointsInputsController;
-    public GameObject prefab;
-	// Use this for initialization
-	void Start () {
+    // public PointsInputsController pointsInputsController;
+    public GameObject buttonPrefab;
+    public GameObject markerPrefab;
+    public GameObject content;
+    public LevelsController levelsController;
+    private float prevActiveLevelPositionY;
+    private LabelButton selectedLabelButton;
 
-	}
+    private GameObject markersStore;
+    // Use this for initialization
+    void Start () {
+        prevActiveLevelPositionY = LevelButton.activeLevelPositionY;
+        markersStore = new GameObject("Markers");
+        LoadList();
+        ShowOnlyActiveMarkers();
+    }
+
+    public void SetSelectedLabel(LabelButton newSelectedLabelButton)
+    {
+        if(selectedLabelButton != null)
+        {
+            selectedLabelButton.UnSelect();
+        }
+        selectedLabelButton = newSelectedLabelButton;
+        selectedLabelButton.Select();
+        Debug.Log(selectedLabelButton.text.text);
+    }
 
     private void ClearLabelsButtonsList()
     {
-        foreach(Transform obj in transform)
+        foreach(Transform obj in content.transform)
         {
             Button button = GetComponent<Button>();
             if(button != null)
@@ -23,11 +44,12 @@ public class LabelsController : MonoBehaviour {
                 Destroy(button.gameObject);
             }
         }
-    }
+    }   
 
     public void LoadList()
     {
-        Debug.Log("loading labels");
+        ClearMarkersList();
+        
         if (!Utils.isOnline())
         {            
             Debug.Log("MainScreen: Нет подключения к интернету!");
@@ -57,16 +79,20 @@ public class LabelsController : MonoBehaviour {
 
                 for (int i = 0; i < response.list.Count; i++)
                 {
-                    Debug.Log(i);
                     JSONObject item = response.list[i];
 
                     if (item != null)
                     {
                         string name = Regex.Unescape(item.GetField(Utils.JSON_NAME).str);
                         LabelsList.self.update(name, item);
-                        GameObject newButton = GameObject.Instantiate(prefab);
+                        GameObject newButton = GameObject.Instantiate(buttonPrefab);
+                        GameObject newLabel = GameObject.Instantiate(markerPrefab);
+                        newLabel.transform.position = Utils.stringToVector3(item.GetField(Utils.JSON_LOCATION).str);
+                        newLabel.transform.parent = markersStore.transform;
+                        newLabel.GetComponent<Label>().SetName(name);
                         newButton.GetComponent<LabelButton>().SetText(name);
-                        newButton.transform.SetParent(transform);
+                        newButton.GetComponent<LabelButton>().SetLabelsController(this);
+                        newButton.transform.SetParent(content.transform);
                     }
                     else
                     {
@@ -78,34 +104,44 @@ public class LabelsController : MonoBehaviour {
                 {
                     Debug.Log("MainScreen: Ошибка загрузки списка...");
                 }
+                else
+                {
+                    ShowOnlyActiveMarkers();
+                }
             }
         }));
     }
 
     public void SetPoint(string name)
     {
+        /*
+        Debug.Log(ShowPathScreen.action);
         switch (ShowPathScreen.action)
         {
             case ShowPathScreen.LabelAction.ADD_POINT_A:
                 {
                     pointsInputsController.SetValuePointA(name);
                     pointsInputsController.navMeshController.SetSource(getLocationByName(name));
-                    
+                    ShowPathScreen.action = ShowPathScreen.LabelAction.ADD_POINT_B;
+
                 }
                 break;
             case ShowPathScreen.LabelAction.ADD_POINT_B:
                 {
                     pointsInputsController.SetValuePointB(name);
                     pointsInputsController.navMeshController.SetDestination(getLocationByName(name));
+                    ShowPathScreen.action = ShowPathScreen.LabelAction.NA;
                 }
                 break;
             default:
                 {
                     pointsInputsController.SetValuePointA(name);
                     pointsInputsController.navMeshController.SetSource(getLocationByName(name));
+                    ShowPathScreen.action = ShowPathScreen.LabelAction.ADD_POINT_B;
                 }
                 break;
         }
+        */
     }
 
     private Vector3 getLocationByName(string name)
@@ -118,26 +154,34 @@ public class LabelsController : MonoBehaviour {
         else
         {
             return Vector3.zero;
-        }
-        
-       
+        }      
     }
-    private void removeLabel()
+
+    public void ShowOnlyActiveMarkers()
     {
-        /*
+        foreach (Transform marker in markersStore.transform)
+        {
+            marker.gameObject.SetActive(marker.gameObject.transform.position.y < levelsController.getActiveLevelPosition().y + 1f);
+        }
+    }
+
+    private void ClearMarkersList()
+    {
+        foreach (Transform marker in markersStore.transform)
+        {
+            Destroy(marker.gameObject);
+        }
+    }
+
+    public void RemoveLabel()
+    {
         if (!Utils.isOnline())
         {
-            
             Debug.Log("MainScreen: Нет подключения к интернету!");
             return;
         }
 
-        
-        
-
-        string currentLabel = PlayerPrefs.GetString(Utils.PREF_CURRENT_LABEL);
-
-        JSONObject obj = LabelsList.self.getLabel(currentLabel);
+        JSONObject obj = LabelsList.self.getLabel(selectedLabelButton.text.text);
 
         if (obj == null)
         {
@@ -145,7 +189,6 @@ public class LabelsController : MonoBehaviour {
             return;
         }
 
-        labelStatus.text = "Удаление метки " + currentLabel;
         Debug.Log("MainScreen: Удаление метки... " + obj.ToString());
 
         // Удаление метки осуществляется по идентификатору
@@ -172,8 +215,6 @@ public class LabelsController : MonoBehaviour {
                 if (response == null)
                 {
                     Debug.Log("MainScreen: response == null ");
-                    enableUI();
-                    loadLabelsList();
                     return;
                 }
 
@@ -186,30 +227,37 @@ public class LabelsController : MonoBehaviour {
                 {
                     if (response.GetField(Utils.JSON_SUCCESS).b)
                     {
-                        labelStatus.text = "Метка успешно удалена!";
+                        
                         Debug.Log("MainScreen: Метка успешно удалена! " + response);
                     }
                     else
                     {
-                        labelStatus.text = "Не удалось удалить метку: " + message;
+                       
                         Debug.Log("MainScreen: Не удалось удалить метку: " + response);
                     }
                 }
                 else
                 {
-                    labelStatus.text = "Некорректный ответ сервера " + message;
+                    
                     Debug.Log("MainScreen: Некорректный ответ " + response);
                 }
+                LoadList();
             }
             else
-            {
-                labelStatus.text = "Ошибка удаления метки...";
+            {              
                 Debug.Log("MainScreen: Ошибка удаления метки...");
             }
-
-            enableUI();
-            loadLabelsList();
         }));
-        */
+    }
+
+    private void Update()
+    {
+
+        if (prevActiveLevelPositionY != levelsController.getActiveLevelPosition().y)
+        {
+            ShowOnlyActiveMarkers();
+            prevActiveLevelPositionY = levelsController.getActiveLevelPosition().y;
+        }
+
     }
 }
